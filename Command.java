@@ -1,12 +1,43 @@
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 
 public class Command {
 	public String label;
 	public String opcode;
 	public String arg1;
 	public String arg2;
+	public int target;
+	public int pc;
+	public int count;
+	
+	
+	public Command(String cmmd, int pc)
+	{
+		String label = "(?<label>[A-Z]+:)";
+		String opcode = "(?<opcode>load|loop|inc|goto|end)";
+		String arg1 = "(?<arg1>\\d+|[a-zA-Z]+)";
+		String arg2 = "(?<arg2>\\d+|[a-z]+)";
+		String instruction = String.format("(%s\\s)?%s(\\s%s)?(\\s%s)?", label, opcode, arg1, arg2);
+		
+		//System.out.println(instruction);
+		Pattern pattern = Pattern.compile(instruction);
+		Matcher matcher = pattern.matcher(cmmd);
+		
+		if(matcher.find()) {			
+			/* Add instruction to the program */
+			this.label = matcher.group("label");
+			if(this.label != null) 
+				this.label = this.label.substring(0, this.label.length() - 1);
+			this.opcode = matcher.group("opcode");
+			this.arg1 = matcher.group("arg1");
+			this.arg2 = matcher.group("arg2");	
+			this.pc = pc;
+		}
+	}
 	
 	public String toString() {
-		return String.format("Label = %s, opcode = %s, arg1 = %s, arg2 = %s", label, opcode, arg1, arg2);
+		return String.format("Label = %s, opcode = %s, arg1 = %s, arg2 = %s, pc = %s", label, opcode, arg1, arg2, pc);
 	}
 
 	@Override
