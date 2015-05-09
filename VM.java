@@ -13,59 +13,29 @@ import java.util.regex.Pattern;
 
 public class VM {
 	ArrayList<Command> program = new ArrayList<Command>();
-	Stack<Frame> commandStack = new Stack<Frame>();
 	Map<String, Integer> vars = new HashMap<String, Integer>();
 	private Integer pc = 0;
 	private Integer numOfExe = 0;
 	
-	public void add(String cmd)
-	{
-		String label = "(?<label>[A-Z]+:)";
-		String opcode = "(?<opcode>load|loop|inc|goto|end)";
-		String arg1 = "(?<arg1>\\d+|[a-zA-Z]+)";
-		String arg2 = "(?<arg2>\\d+|[a-z]+)";
-		String instruction = String.format("(%s\\s)?%s(\\s%s)?(\\s%s)?", label, opcode, arg1, arg2);
-		
-		//System.out.println(instruction);
-		Pattern pattern = Pattern.compile(instruction);
-		Matcher matcher = pattern.matcher(cmd);
-		
-		if(matcher.find()) {
-			//System.out.println(matcher.group());
-			
-			/* Add instruction to the program */
-				/* Initialize the command object */
-				Command c = new Command();
-				c.label = matcher.group("label");
-				if(c.label != null) c.label = c.label.substring(0, c.label.length() - 1);
-				c.opcode = matcher.group("opcode");
-				c.arg1 = matcher.group("arg1");
-				c.arg2 = matcher.group("arg2");
-				
-				/* Add the command object to the program */
-				program.add(c);
-				
-				/* special case. gotos and labels */
-				if(c.label != null) {
-					int index = program.indexOf(c);
-					vars.put(c.label, index);
-				}		
-		}
+	/* Lab 2 */
+	public void add(String cmmd) {
+		program.add(new Command(cmmd, pc++));
 	}
 	
+	/* Lab 2 */
 	public void compile(String filename)
 	{
 		Charset charset = Charset.forName("US-ASCII");
 		String dir = System.getProperty("user.dir") + "/src/";
 		Path path = FileSystems.getDefault().getPath(dir, filename);
-		System.out.println(dir);
+		//System.out.println(dir);
  		try (BufferedReader reader = Files.newBufferedReader(path, charset)) {
 		    String line = null;
 		    while ((line = reader.readLine()) != null) {
 		    	if(!line.isEmpty()) {
 		    		line.trim();
 		    		if(line.charAt(0) != '#') {
-		    			System.out.println(line);
+		    			//System.out.println(line);
 		    			add(line.trim());
 		    		}
 		    	}
@@ -75,20 +45,40 @@ public class VM {
 		}
 	}
 	
+	private void resolveLabels() {
+		   Stack<Command> loopStack = new Stack<Command>();
+		   Map<String, Integer> targets = new HashMap<String, Integer>();
+		   
+		   // pass 1
+		   for(Command cmmd: program) { 
+			   if(cmmd.label != null)
+				   targets.put(cmmd.label, cmmd.pc);
+			   else if(cmmd.opcode.equals("loop"))
+				   loopStack.push(cmmd);
+			   else if (cmmd.opcode.equals("end")) {
+				   Command loop = loopStack.pop();
+				   loop.target = cmmd.pc;
+				   cmmd.target = loop.pc;
+			   }
+		   }
+		   
+		   // pass 2
+		   for(Command cmmd: program) {
+			   if(cmmd.opcode.equals("goto"))
+				   cmmd.target = targets.get(cmmd.arg1);	   
+		   }
+	}
+	
 	public void execute(Command cmd)
 	{
 		numOfExe++;
 		
-		if(cmd.opcode.equals("goto")) {
-			if(vars.get(cmd.arg1) != null) {
-				pc = vars.get(cmd.arg1);
-			} else {
-				pc = program.size();
-			}
-			return;
-		}
-		
-		if(cmd.opcode.equals("load")) {
+		if(cmd.opcode.equals("goto")) 
+		{
+			pc = cmd.target;
+		} 
+		else if(cmd.opcode.equals("load")) 
+		{
 			char c = cmd.arg2.charAt(0);
 			if(Character.isDigit(c)) {
 				vars.put(cmd.arg1, Integer.parseInt(cmd.arg2));
@@ -101,10 +91,9 @@ public class VM {
 					vars.put(cmd.arg1, 0);
 				}
 			}
-			return;
-		}
-		
-		if(cmd.opcode.equals("inc")) {
+		} 
+		else if(cmd.opcode.equals("inc")) 
+		{
 			Integer var;
 			if(vars.containsKey(cmd.arg1)) {
 				var = vars.get(cmd.arg1);
@@ -114,48 +103,55 @@ public class VM {
 			}
 			var++;
 			vars.replace(cmd.arg1, var);
-			return;
-		}
-		
-		//update later
-		if(cmd.opcode.equals("loop")) {
-			Frame frame = new Frame();
+			
+		} 
+		else if (cmd.opcode.equals("loop")) 
+		{
+			
 			char c = cmd.arg1.charAt(0);
-			if(Character.isDigit(c)) {
-				frame.count = Integer.parseInt(cmd.arg1) - 1;
-			} else {
-				if(vars.containsKey(cmd.arg1)) {
-					frame.count = vars.get(cmd.arg1);
-					frame.count = vars.get(cmd.arg1) - 1;
-				} else {
-					frame.count = 0;
+			if(Character.isDigit(c)) 
+			{
+				cmd.count = Integer.parseInt(cmd.arg1);
+			} 
+			else 
+			{
+				if(vars.containsKey(cmd.arg1)) 
+				{
+					cmd.count = vars.get(cmd.arg1);
+				} 
+				else 
+				{
+					// Initilize variable to 0 and add it to the vars table
+					cmd.count = 0;
 					vars.put(cmd.arg1, 0);
 				}
+			}
+			
+			// Jump to the corresponding "end" if count is less
+			// than or equal to zero
+			if(cmd.count <= 0)
+				pc = cmd.target + 1;
 				
+			
+		} 
+		else if (cmd.opcode.equals("end")) 
+		{
+			Command myLoop = program.get(cmd.target);
+			myLoop.count--;
+			if(myLoop.count > 0) {
+				pc = myLoop.pc + 1;
 			}
-			frame.pc = pc;
-			commandStack.push(frame);
-			return;
-		}
-		
-		if(cmd.opcode.equals("end")) {
-			Frame frame = commandStack.peek();
-			if(frame.count == 0) {
-				commandStack.pop();
-			} else {
-				frame.count--;
-				pc = frame.pc;
-			}
-			return;
 		}
 	}
 	
-	public void run()
-	{
+	public void run() {
+		resolveLabels();
+		pc = 0;
 		while(pc < program.size())
 			execute(program.get(pc++));
 	}
 	
+	/* Lab 7 */
 	public String toString() {
 		return String.format("lines executed = %d, pc = %d, vars[%d] = %s", numOfExe, pc,  vars.size(), vars);
 	}
